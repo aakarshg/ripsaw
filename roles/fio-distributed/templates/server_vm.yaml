@@ -1,0 +1,62 @@
+---
+apiVersion: kubevirt.io/v1alpha3
+kind: VirtualMachineInstance
+metadata:
+  labels:
+    special: vmi-fedora
+    app: fio-benchmark-{{ trunc_uuid }}
+  name: 'fio-server-{{ item }}-benchmark-{{ trunc_uuid }}'
+  namespace: '{{ operator_namespace }}'
+spec:
+{% if pin_server %}
+  nodeSelector:
+    kubernetes.io/hostname: '{{ pin_server }}'
+{% endif %}
+  domain:
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: containerdisk
+      - disk:
+          bus: virtio
+        name: cloudinitdisk
+{% if fiod.storageclass is defined %}
+      - name: test-volume
+        # This makes it a disk
+        disk: {}
+        serial: CVLY623300HK250D
+{% endif %}
+    machine:
+      type: ""
+    resources:
+      requests:
+        memory: 1024M
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - name: containerdisk
+    containerDisk:
+      image: kubevirt/fedora-cloud-container-disk-demo:latest
+  - cloudInitNoCloud:
+      userData: |-
+        #cloud-config
+        password: fedora
+        chpasswd: { expire: False }
+        bootcmd:
+          # mount the volume if needed
+{% if fiod.storageclass is defined %}
+          - "mkdir /mnt/pvc"
+          - "mount /dev/$(lsblk --nodeps -no name,serial | grep CVLY623300HK250D | cut -f1 -d' ') /mnt/pvc"
+{% endif %}
+        runcmd:
+          - yum install -y yum-plugin-copr
+          - yum copr enable ndokos/pbench -y
+          - yum install -y pbench-fio redis git
+          - fio --server
+    name: cloudinitdisk
+{% if fiod.storageclass is defined %}
+  - name: test-volume
+    persistentVolumeClaim:
+      claimName: claim-{{ item }}-{{ trunc_uuid }}
+{% endif %}
+status: {}

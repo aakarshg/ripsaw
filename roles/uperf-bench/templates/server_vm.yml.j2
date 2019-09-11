@@ -1,0 +1,39 @@
+---
+apiVersion: kubevirt.io/v1alpha3
+kind: VirtualMachineInstance
+metadata:
+  name: 'uperf-server-{{ item }}-{{ trunc_uuid }}'
+  namespace: '{{ operator_namespace }}'
+  labels:
+    app : uperf-bench-server-{{item}}-{{ trunc_uuid }}
+    type : uperf-bench-server-{{ trunc_uuid }}
+spec:
+  domain:
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: containerdisk
+      - disk:
+          bus: virtio
+        name: cloudinitdisk
+    machine:
+      type: ""
+    resources:
+      requests:
+        memory: 1024M
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - name: containerdisk
+    containerDisk:
+      image: quay.io/rht_perf_ci/uperf:vm
+  - cloudInitNoCloud:
+      userData: |-
+        #cloud-config
+        password: fedora
+        chpasswd: { expire: False }
+        runcmd:
+          - redis-cli -h {{bo.resources[0].status.podIP}} set $(hostname -I) true
+          - uperf -s -v
+    name: cloudinitdisk
+status: {}
